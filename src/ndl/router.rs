@@ -2,9 +2,33 @@ use std::fs;
 
 use crate::ndl::debug::log;
 use crate::ndl::files;
+use crate::ndl::response::{
+    body::{CompressionType, ResponseBody},
+    builder::Response,
+    negotiate::{select_compression, select_error_format},
+};
 
-pub fn route_request(method: &str, path: &str, _version: &str) -> Vec<u8> {
-    if method == "GET" {
+pub fn route_request(
+    method: &str,
+    path: &str,
+    _version: &str,
+    accept: Option<&str>,
+    accept_encoding: Option<&str>,
+) -> Vec<u8> {
+    let format = select_error_format(accept);
+    let compression = select_compression(accept_encoding);
+
+    if method == "OPTIONS" {
+        return Response::no_content()
+            .with_cors(
+                "*",
+                "GET, POST, PUT, DELETE, OPTIONS, PATCH",
+                "Content-Type, Authorization, Accept",
+            )
+            .to_bytes(&CompressionType::None);
+    }
+
+    if method == "GET" || method == "HEAD" {
         let file_path = if path == "/" {
             format!("{}/index.html", files::PUBLIC_PATH)
         } else {
@@ -13,47 +37,28 @@ pub fn route_request(method: &str, path: &str, _version: &str) -> Vec<u8> {
 
         match fs::read(&file_path) {
             Ok(contents) => {
-                let content_type = get_content_type(&file_path);
-                log::info(&format!("GET request routed successfully: '{}'", file_path));
-                
-                let header = format!(
-                    "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nContent-Type: {}\r\n\r\n",
-                    contents.len(),
-                    content_type
-                );
-                
-                let mut response = header.into_bytes();
-                response.extend_from_slice(&contents);
-                response
-            },
+                log::info(&format!("Serving '{}'", file_path));
+                let mut response = Response::serve_file(&file_path, contents);
+
+                if method == "HEAD" {
+                    response.body = ResponseBody::Empty;
+                }
+
+                response.to_bytes(&compression)
+            }
             Err(_) => {
-                log::warn(&format!("GET request failed (file not found at '{}')", file_path));
-                "HTTP/1.1 404 (File Not Found)\r\nContent-Length: 0\r\n\r\n".as_bytes().to_vec()
-            },
+                log::warn(&format!("Not found: '{}'", file_path));
+                Response::not_found("The requested resource could not be found.", &format)
+                    .with_security_headers()
+                    .with_no_cache()
+                    .to_bytes(&CompressionType::None)
+            }
         }
     } else {
-        log::warn(&format!("{} request not allowed for path '{}'", method, path));
-        "HTTP/1.1 405 (Method Not Allowed)\r\nContent-Length: 0\r\n\r\n".as_bytes().to_vec()
+        log::warn(&format!("{} not allowed for '{}'", method, path));
+        Response::method_not_allowed(&format)
+            .with_security_headers()
+            .with_no_cache()
+            .to_bytes(&CompressionType::None)
     }
-}
-
-const CONTENT_TYPES: &[(&str, &str)] = &[
-    (".html", "text/html"),
-    (".css", "text/css"),
-    (".js", "application/javascript"),
-    (".png", "image/png"),
-    (".jpg", "image/jpeg"),
-    (".jpeg", "image/jpeg"),
-    (".gif", "image/gif"),
-    (".svg", "image/svg+xml"),
-    (".ico", "image/x-icon"),
-];
-
-fn get_content_type(file_path: &str) -> &'static str {
-    CONTENT_TYPES
-        .iter()
-        .find(|(ext, _)| file_path.ends_with(ext))
-        .map(|(_, mime)| mime)
-        .copied()
-        .unwrap_or("application/octet-stream")
 }
