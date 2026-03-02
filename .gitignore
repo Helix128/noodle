@@ -1,5 +1,5 @@
-debug
-target
-.vscode
-logs
-public
+/debug
+/target
+/.vscode
+/logs
+/public
