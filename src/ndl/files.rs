@@ -120,7 +120,7 @@ fn is_local_path(path: &str) -> bool {
         }
     }
     
-    true
+    return true;
 }
 
 fn resolve_image_path(html_file: &Path, img_path: &str) -> Result<std::path::PathBuf, Box<dyn std::error::Error>> {
