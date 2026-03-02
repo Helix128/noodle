@@ -1,2 +1,2 @@
 # noodle 
-noodle is a basic web server written in Rust 
+noodle is a simple web server written in Rust for funsies
