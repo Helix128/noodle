@@ -11,7 +11,10 @@ fn main() {
     let version = env!("CARGO_PKG_VERSION");
     println!("{} {} {}{}","Running",style("Noodle").bold(), style("v").green(), style(version).green());
     
-    files::preprocess();    
+    if let Err(e) = files::ensure_live_dir() {
+        eprintln!("Failed to create live directory: {}", e);
+        return;
+    }
     
     let listener = HttpListener::new(80);
     listener.start();

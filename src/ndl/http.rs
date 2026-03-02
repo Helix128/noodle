@@ -4,6 +4,7 @@ use std::time::Duration;
 use threadpool::ThreadPool;
 
 use crate::ndl::debug::log;
+use crate::ndl::pipeline::{self, ProcessingLocks};
 use crate::ndl::response::{
     body::CompressionType,
     builder::Response,
@@ -22,6 +23,7 @@ pub struct HttpListener {
     port: u16,
     pool: ThreadPool,
     rate_limiter: Arc<Mutex<RateLimiter>>,
+    processing_locks: ProcessingLocks,
 }
 
 impl HttpListener {
@@ -31,6 +33,7 @@ impl HttpListener {
             port,
             pool: ThreadPool::new(num_workers),
             rate_limiter: Arc::new(Mutex::new(RateLimiter::default())),
+            processing_locks: pipeline::new_locks(),
         }
     }
 
@@ -65,6 +68,7 @@ impl HttpListener {
                     };
 
                     let rate_limiter = Arc::clone(&self.rate_limiter);
+                    let processing_locks = Arc::clone(&self.processing_locks);
 
                     self.pool.execute(move || {
                         if let Some(ip) = peer_addr {
@@ -85,7 +89,7 @@ impl HttpListener {
                             }
                         }
 
-                        Self::handle_client(stream);
+                        Self::handle_client(stream, &processing_locks);
                     });
                 }
                 Err(e) => {
@@ -95,7 +99,7 @@ impl HttpListener {
         }
     }
 
-    fn handle_client(mut stream: std::net::TcpStream) {
+    fn handle_client(mut stream: std::net::TcpStream, locks: &ProcessingLocks) {
         if let Err(e) = stream.set_read_timeout(Some(Duration::from_secs(READ_TIMEOUT_SECS))) {
             log::error(&format!("Failed to set read timeout: {}", e));
             return;
@@ -214,6 +218,7 @@ impl HttpListener {
             version,
             accept.as_deref(),
             accept_encoding.as_deref(),
+            locks,
         );
 
         Self::send_response(stream, response);

@@ -1,11 +1,14 @@
 use std::fs;
+use std::path::Path;
 
 use crate::ndl::debug::log;
 use crate::ndl::files;
+use crate::ndl::pipeline::{self, ProcessingLocks};
 use crate::ndl::response::{
     body::{CompressionType, ResponseBody},
     builder::Response,
     negotiate::{select_compression, select_error_format},
+    status::StatusCode,
 };
 
 pub fn route_request(
@@ -14,6 +17,7 @@ pub fn route_request(
     _version: &str,
     accept: Option<&str>,
     accept_encoding: Option<&str>,
+    locks: &ProcessingLocks,
 ) -> Vec<u8> {
     let format = select_error_format(accept);
     let compression = select_compression(accept_encoding);
@@ -30,10 +34,19 @@ pub fn route_request(
 
     if method == "GET" || method == "HEAD" {
         let file_path = if path == "/" {
-            format!("{}/index.html", files::PUBLIC_PATH)
+            format!("{}/index.html", files::LIVE_PATH)
         } else {
-            format!("{}{}", files::PUBLIC_PATH, path)
+            format!("{}{}", files::LIVE_PATH, path)
         };
+
+        let live = Path::new(&file_path);
+        if let Err(e) = pipeline::ensure_up_to_date(live, locks) {
+            log::error(&format!("Pipeline error for '{}': {}", file_path, e));
+            return Response::error_response(StatusCode::InternalServerError, "Internal server error.", &format)
+                .with_security_headers()
+                .with_no_cache()
+                .to_bytes(&CompressionType::None);
+        }
 
         match fs::read(&file_path) {
             Ok(contents) => {
