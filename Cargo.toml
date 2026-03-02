@@ -1,0 +1,14 @@
+[package]
+name = "noodle"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+chrono = "0.4.44"
+console = "0.16.2"
+threadpool = "1.8.1"
+num_cpus = "1.16"
+ravif = { version = "0.13.0", default-features = false }
+image = "0.25.9"
+imgref = "1.12.0"
+regex = "1.12.3"
